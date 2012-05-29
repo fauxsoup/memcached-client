@@ -1,0 +1,10 @@
+{application, memcached_client,
+ [{description, "Memcached Client"},
+  {vsn, "0.1.0"},
+  {modules, [memcached, chash]},
+  {registered, [memcached_sup]},
+  {env, [
+      {memcached, [{"127.0.0.1", 11211}]}
+    ]},
+  {mod, {memcached_app, []}},
+  {applications, [kernel, stdlib]}]}.
