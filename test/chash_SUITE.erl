@@ -16,33 +16,33 @@ suite() ->
 
 %% Tests start.
 test_simple(_Config) ->
-    CHash = chash:new(chash1),
-    ok = chash:add_node(CHash, "127.0.0.1:8000", server_a),
-    ok = chash:add_node(CHash, "127.0.0.1:8001", server_b),
-    ok = chash:add_node(CHash, "127.0.0.1:8002", server_c),
-    Server = chash:get_node(CHash, "Hello"),
+    CHash = memcached_chash:new(chash1),
+    ok = memcached_chash:add_node(CHash, "127.0.0.1:8000", server_a),
+    ok = memcached_chash:add_node(CHash, "127.0.0.1:8001", server_b),
+    ok = memcached_chash:add_node(CHash, "127.0.0.1:8002", server_c),
+    Server = memcached_chash:get_node(CHash, "Hello"),
     io:format("Server=~p", [Server]),
     true = lists:any(fun(E) -> E =:= Server end, [server_a, server_b, server_c]),
 
-    ok = chash:remove_node(CHash, "127.0.0.1:8000"),
-    Server2 = chash:get_node(CHash, "Hello"),
+    ok = memcached_chash:remove_node(CHash, "127.0.0.1:8000"),
+    Server2 = memcached_chash:get_node(CHash, "Hello"),
     true = lists:any(fun(E) -> E =:= Server2 end, [server_b, server_c]),
 
-    ok = chash:remove_node(CHash, "127.0.0.1:8002"),
-    Server3 = chash:get_node(CHash, "Hello"),
+    ok = memcached_chash:remove_node(CHash, "127.0.0.1:8002"),
+    Server3 = memcached_chash:get_node(CHash, "Hello"),
     true = lists:any(fun(E) -> E =:= Server3 end, [server_b]),
-    true = chash:delete(CHash),
+    true = memcached_chash:delete(CHash),
     ok.
 
 
 test_practical(_Config) ->
     Keys = gen_random_keys(10000, 10000 * 10000),
-    CHash = chash:new(chash1),
-    ok = chash:add_node(CHash, "127.0.0.1:8000", server_a),
-    ok = chash:add_node(CHash, "127.0.0.1:8001", server_b),
-    ok = chash:add_node(CHash, "127.0.0.1:8002", server_c),
+    CHash = memcached_chash:new(chash1),
+    ok = memcached_chash:add_node(CHash, "127.0.0.1:8000", server_a),
+    ok = memcached_chash:add_node(CHash, "127.0.0.1:8001", server_b),
+    ok = memcached_chash:add_node(CHash, "127.0.0.1:8002", server_c),
 
-    Servers = lists:map(fun(Key) -> chash:get_node(CHash, Key) end, Keys),
+    Servers = lists:map(fun(Key) -> memcached_chash:get_node(CHash, Key) end, Keys),
     NumberOfA = length(lists:filter(fun(Server) -> Server =:= server_a end, Servers)),
     NumberOfB = length(lists:filter(fun(Server) -> Server =:= server_b end, Servers)),
     NumberOfC = length(lists:filter(fun(Server) -> Server =:= server_c end, Servers)),
@@ -51,8 +51,8 @@ test_practical(_Config) ->
     true = (3000 =< NumberOfC andalso NumberOfC =< 3600),
 
     %% remove node
-    ok = chash:remove_node(CHash, "127.0.0.1:8001"),
-    Servers2 = lists:map(fun(Key) -> chash:get_node(CHash, Key) end, Keys),
+    ok = memcached_chash:remove_node(CHash, "127.0.0.1:8001"),
+    Servers2 = lists:map(fun(Key) -> memcached_chash:get_node(CHash, Key) end, Keys),
     NumberOfA2 = length(lists:filter(fun(Server) -> Server =:= server_a end, Servers2)),
     NumberOfB2 = length(lists:filter(fun(Server) -> Server =:= server_b end, Servers2)),
     NumberOfC2 = length(lists:filter(fun(Server) -> Server =:= server_c end, Servers2)),
@@ -61,8 +61,8 @@ test_practical(_Config) ->
     true = NumberOfB2 =:= 0,
 
     %% remove node
-    ok = chash:remove_node(CHash, "127.0.0.1:8000"),
-    Servers3 = lists:map(fun(Key) -> chash:get_node(CHash, Key) end, Keys),
+    ok = memcached_chash:remove_node(CHash, "127.0.0.1:8000"),
+    Servers3 = lists:map(fun(Key) -> memcached_chash:get_node(CHash, Key) end, Keys),
     NumberOfA3 = length(lists:filter(fun(Server) -> Server =:= server_a end, Servers3)),
     NumberOfB3 = length(lists:filter(fun(Server) -> Server =:= server_b end, Servers3)),
     NumberOfC3 = length(lists:filter(fun(Server) -> Server =:= server_c end, Servers3)),

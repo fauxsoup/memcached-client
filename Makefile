@@ -31,10 +31,10 @@ $(EBIN_DIR)/%.beam: $(SOURCE_DIR)/%.erl
 	erlc -pa $(EBIN_DIR) $(ERLC_FLAGS) -I$(INCLUDE_DIR) -o$(EBIN_DIR) $<
 
 check: all
-	pgrep -lf memcached |grep 11411 || false
+	pgrep -lf memcached |grep 11411 || false # proctools required on OSX
 	@memcached -d -p 11411 -P ${PID_FILE1} #-vvv
 	@memcached -d -p 11511 -P ${PID_FILE2} #-vvv
-	@erl -pa `pwd`/ebin -eval 'io:format("~p", [ct:run_test([{auto_compile, true}, {dir, "./test"}, {logdir, "./log"}, {refresh_logs, "./log"}, {cover, "./src/coverspec"}])]).' -s init stop
+	@erl -pa `pwd`/ebin -eval 'application:start(memcached_client), io:format("~p", [ct:run_test([{spec, "memcached-client.spec"}, {auto_compile, true}])]).' -s init stop
 	@kill `cat ${PID_FILE1}`
 	@kill `cat ${PID_FILE2}`
 

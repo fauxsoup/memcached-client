@@ -57,7 +57,7 @@
         ]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+-export([start_link/4, new_conn/1, init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
 %%====================================================================
@@ -73,14 +73,24 @@
 %% API
 %%====================================================================
 
+start_link(Owner, Host, Port, Opts) -> 
+    gen_server:start_link(?MODULE, [Owner, Host, Port, Opts], []).
+
+%start_link(Config) -> connect(Config).   
 
 %% @spec connect(Host::string(), Port::integer()) -> {ok, Conn} | {error, Reason}
 connect(Host, Port) ->
-    gen_server:start_link(?MODULE, [Host, Port], []).
+    memcached_sup:connect(self(), Host, Port, []).
+    %gen_server:start_link(?MODULE, [Host, Port], []).
 
 connect(HostPortSpecs) ->
     [{Host, Port} | _More] = HostPortSpecs,
-    gen_server:start_link(?MODULE, [Host, Port], []).
+    memcached_sup:connect(self(), Host, Port, []).
+    %gen_server:start_link(?MODULE, [Host, Port], []).
+
+new_conn(HostPortSpecs) ->
+    [{Host, Port} | _More] = HostPortSpecs,
+    memcached_sup:connect(self(), Host, Port, []).
 
 %%--------------------------------------------------------------------
 %% Function: set
@@ -330,14 +340,15 @@ disconnect(Conn) ->
     ok.
 
 
-init([Host, Port]) ->
+init([Super, Host, Port, _Opts]) ->
     case gen_tcp:connect(Host, Port, ?TCP_OPTIONS) of
         {ok, Socket} ->
+            erlang:monitor(process, Super),
             Server = Host ++ integer_to_list(Port),
-            CHash = chash:new(memcached),
-            ok = chash:add_node(CHash, Server, Server),
+            CHash = memcached_chash:new(memcached),
+            ok = memcached_chash:add_node(CHash, Server, Server),
             Connections = ets:new(connections, [set, protected]),
-            true = ets:insert(Connections, {Server, {Host, Port}}),
+            true = ets:insert(Connections, {Server, Socket}),
             {ok, {Connections, CHash, Socket}};
         {error, Reason} ->
             {stop, Reason};
@@ -370,6 +381,8 @@ handle_call({get, Key}, _From, {Connections, CHash, _Socket}) ->
                       {reply, {error, not_found}, {NewConnections, CHash, Socket}};
                   {ok, [{_Key, Value, _CasUnique64}]} ->
                       {reply, {ok, binary_to_term(Value)}, {NewConnections, CHash, Socket}};
+                  {error, Error}=Err when Error == enotconn ->
+                      {stop, normal, Err, {NewConnections, CHash, Socket}};
                   Other ->
                       {reply, Other, {NewConnections, CHash, Socket}}
               end
@@ -385,6 +398,8 @@ handle_call({gets, Key}, _From, {Connections, CHash, _Socket}) ->
                       {reply, {error, not_found}, {NewConnections, CHash, Socket}};
                   {ok, [{_Key, Value, CasUnique64}]} ->
                       {reply, {ok, binary_to_term(Value), CasUnique64}, {NewConnections, CHash, Socket}};
+                  {error, Error}=Err when Error == enotconn ->
+                      {stop, normal, Err, {NewConnections, CHash, Socket}};
                   Other ->
                       {reply, Other, {NewConnections, CHash, Socket}}
               end
@@ -400,6 +415,8 @@ handle_call({getb, Key}, _From, {Connections, CHash, _Socket}) ->
                       {reply, {error, not_found}, {NewConnections, CHash, Socket}};
                   {ok, [{_Key, Value, _CasUnique64}]} ->
                       {reply, {ok, Value}, {NewConnections, CHash, Socket}};
+                  {error, Error}=Err when Error == enotconn ->
+                      {stop, normal, Err, {NewConnections, CHash, Socket}};
                   Other ->
                       {reply, Other, {NewConnections, CHash, Socket}}
               end
@@ -415,6 +432,8 @@ handle_call({getsb, Key}, _From, {Connections, CHash, _Socket}) ->
                       {reply, {error, not_found}, {NewConnections, CHash, Socket}};
                   {ok, [{_Key, Value, CasUnique64}]} ->
                       {reply, {ok, Value, CasUnique64}, {NewConnections, CHash, Socket}};
+                  {error, Error}=Err when Error == enotconn ->
+                      {stop, normal, Err, {NewConnections, CHash, Socket}};
                   Other ->
                       {reply, Other, {NewConnections, CHash, Socket}}
               end
@@ -427,6 +446,8 @@ handle_call({get_multi, Keys}, _From, {Connections, CHash, Socket}) ->
         {ok, BinaryValues} ->
             Values = lists:map(fun({Key, Value, _CasUnique64}) -> {Key, binary_to_term(Value)} end, BinaryValues),
             {reply, {ok, Values}, {Connections, CHash, Socket}};
+        {error, Error}=Err when Error == enotconn ->
+            {stop, normal, Err, {Connections, CHash, Socket}};
         Other ->
             {reply, Other, {Connections, CHash, Socket}}
     end;
@@ -437,6 +458,8 @@ handle_call({get_multib, Keys}, _From, {Connections, CHash, Socket}) ->
         {ok, BinaryValues} ->
             Values = lists:map(fun({Key, BinaryValue, _CasUnique64}) -> {Key, BinaryValue} end, BinaryValues),
             {reply, {ok, Values}, {Connections, CHash, Socket}};
+        {error, Error}=Err when Error == enotconn ->
+            {stop, normal, Err, {Connections, CHash, Socket}};
         Other ->
             {reply, Other, {Connections, CHash, Socket}}
     end;
@@ -447,6 +470,8 @@ handle_call({gets_multi, Keys}, _From, {Connections, CHash, Socket}) ->
         {ok, BinaryValues} ->
             Values = lists:map(fun({Key, Value, CasUnique64}) -> {Key, binary_to_term(Value), CasUnique64} end, BinaryValues),
             {reply, {ok, Values}, {Connections, CHash, Socket}};
+        {error, Error}=Err when Error == enotconn ->
+            {stop, normal, Err, {Connections, CHash, Socket}};
         Other ->
             {reply, Other, {Connections, CHash, Socket}}
     end;
@@ -457,6 +482,8 @@ handle_call({gets_multib, Keys}, _From, {Connections, CHash, Socket}) ->
         {ok, BinaryValues} ->
             Values = lists:map(fun({Key, Value, CasUnique64}) -> {Key, Value, CasUnique64} end, BinaryValues),
             {reply, {ok, Values}, {Connections, CHash, Socket}};
+        {error, Error}=Err when Error == enotconn ->
+            {stop, normal, Err, {Connections, CHash, Socket}};
         Other ->
             {reply, Other, {Connections, CHash, Socket}}
     end;
@@ -534,7 +561,7 @@ handle_call(stats, _From, {Connections, CHash, Socket}) ->
 
 
 handle_call(quit, _From, {Connections, CHash, _Socket}) ->
-    lists:foreach(fun(Socket) -> gen_tcp:senc(Socket, <<"quit\r\n">>) end, all_sockets(Connections)),
+    lists:foreach(fun(Socket) -> gen_tcp:send(Socket, <<"quit\r\n">>) end, all_sockets(Connections)),
     {reply, ok, {Connections, CHash, _Socket}};
 %%     case get_socket(Key, Connections, CHash) of
 %%         {ok, Socket, NewConnections} ->
@@ -631,9 +658,10 @@ parse_single_value(Data) ->
     end.
 
 
-parse_values(Data) ->
-    parse_values(Data, []).
-parse_values(Data, Values) ->
+parse_values(Data, Socket) ->
+    parse_values(Data, [], Socket).
+
+parse_values(Data, Values, Socket) ->
     %% Format: VALUE <key> <flags> <bytes> [<cas unique>]\r\n
     case split(Data) of
         {error, Reason} ->
@@ -645,16 +673,46 @@ parse_values(Data, Values) ->
         {Head, Tail} ->
             case parse_single_value(Head) of
                 {Key, Bytes, CasUnique64} ->
-                    {ValueList, Rest}  = lists:split(Bytes, Tail),
-                    Value = list_to_binary(ValueList),
-                    case Rest of
-                        [] -> {ok, lists:reverse([{Key, Value, CasUnique64} | Values])};
-                        [?CR| [?LF | R]] ->
-                            parse_values(R, [{Key, Value, CasUnique64} | Values])
-                    end;
+                    case Bytes > length(Tail) of
+                        true -> 
+
+                            Offset = Bytes - length(Tail),
+                            case get_remaining(Data, Offset, Socket) of
+                              {ok, NewData}  ->
+                                parse_values(NewData, Values, Socket);  
+
+                              {error, Reason} ->
+                                {error, Reason}
+                            end;
+
+                        false -> 
+                            {ValueList, Rest}  = lists:split(Bytes, Tail),
+                            Value = list_to_binary(ValueList),
+                            case Rest of
+                                [] -> {ok, lists:reverse([{Key, Value, CasUnique64} | Values])};
+                                [?CR| [?LF | R]] ->
+                                    parse_values(R, [{Key, Value, CasUnique64} | Values], Socket)
+                            end
+                   end;
                 Other ->
                     Other
             end
+    end.
+
+
+
+get_remaining(Data, Offset, Socket) ->
+    case gen_tcp:recv(Socket, Offset, ?TIMEOUT) of
+        {ok, Packet0} ->
+            case gen_tcp:recv(Socket, 0, ?TIMEOUT) of
+                {ok, Packet1}   -> Packets = binary_to_list(iolist_to_binary([Packet0, Packet1])),
+                                   {ok, Data ++ Packets};
+
+                {error, Reason} -> {error, Reason}
+            end;
+
+        {error, Reason} -> {error, Reason}
+           
     end.
 
 
@@ -730,7 +788,7 @@ get_command(Socket, GetCommand, Keys) ->
     gen_tcp:send(Socket, <<Command/binary, "\r\n">>),
     case gen_tcp:recv(Socket, 0, ?TIMEOUT) of
         {ok, Packet} ->
-            parse_values(binary_to_list(Packet));
+            parse_values(binary_to_list(Packet), Socket);
         Other ->
             Other
     end.
@@ -760,7 +818,7 @@ incr_decr_command(Socket, IncrDecr, Key, Value) ->
 
 
 get_socket(Key, Connections, CHash) ->
-    Server = chash:get_node(CHash, Key),
+    Server = memcached_chash:get_node(CHash, Key),
     case ets:lookup(Connections, Server) of
         [{Server, {Host, Port}}] ->
             case gen_tcp:connect(Host, Port, ?TCP_OPTIONS) of
@@ -780,24 +838,15 @@ get_socket(Key, Connections, CHash) ->
 all_sockets(Connections) ->
     ets:foldr(fun(X, Accum) ->
                       case X of
+                          {_Server, Socket} when is_port(Socket) -> [Socket | Accum];
                           {_Host, _Port} ->
-                              Accum;
-                          Socket -> [Socket | Accum]
+                              Accum
                       end
               end,
               [],
               Connections).
 
 
-filter_map(_Fun, []) ->
-    [];
-filter_map(Fun, [Elem | Rest]) ->
-    case apply(Fun, [Elem]) of
-        false ->
-            filter_map(Fun, Rest);
-        X ->
-            [X | filter_map(Fun, Rest)]
-    end.
 
 %% Borrowed from http://www.trapexit.org/String_join_with
 string_join(Join, L) ->

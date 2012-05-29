@@ -68,5 +68,11 @@ See more examples on [memcached_SUITE.erl](http://github.com/higepon/memcached-c
 If you would like to contribute, first check out the source.
 Then modify the markdown files with your improvements, commit them and either send me a patch, or push the changes into a fork of the repo and send me a pull request.
 
+### Improvements
+Added support for large getb and get_multib and associated tests... 
+Added .spec and .cfg files to common test, also works better on OSX
+
 ### Contributors
-- [volutas](http://twitter.com/voluntas)
+- [volutas] (http://twitter.com/voluntas)
+- [rampage] (http://github.com/rampage)
+

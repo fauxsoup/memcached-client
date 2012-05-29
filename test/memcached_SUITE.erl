@@ -45,6 +45,32 @@ test_setb_getb(_Config) ->
     {ok,  <<10:64/little>>} = memcached:getb(Conn, "bin_key"),
     ok = memcached:disconnect(Conn).
 
+test_large_setb_getb(_Config) ->
+    Data = list_to_binary(lists:flatten([ lists:seq($a, $z) % close to a meg (1023000 bytes)
+            ++ lists:seq($A, $Z) ++ lists:seq($0, $9) || _ <- lists:seq(1, 16500) ])),
+    {ok, Conn} = memcached:connect(?MEMCACHED_HOST, ?MEMCACHED_PORT1),
+    ok = memcached:setb(Conn, "bin_key", Data),
+    io:format("aval=~p~n", [size(Data)]),
+    {ok, Data} = memcached:getb(Conn, "bin_key"),
+    1023000 = size(Data),
+    ok = memcached:disconnect(Conn).
+
+test_large_setb_get_multib(_Config) ->
+    Data = list_to_binary(lists:flatten([ lists:seq($a, $z) % close to a meg (1023000 bytes)
+            ++ lists:seq($A, $Z) ++ lists:seq($0, $9) || _ <- lists:seq(1, 16500) ])),
+    {ok, Conn} = memcached:connect(?MEMCACHED_HOST, ?MEMCACHED_PORT1),
+
+
+    ok = memcached:setb(Conn, "bin_key1", Data),
+    ok = memcached:setb(Conn, "bin_key2", <<10:64/little>>),
+
+    io:format("aval=~p~n", [size(Data)]),
+    {ok, [{"bin_key1", Data},
+          {"bin_key2", <<10:64/little>>}]}
+        = memcached:get_multib(Conn, ["bin_key1", "bin_key2"]),
+
+    1023000 = size(Data),
+    ok = memcached:disconnect(Conn).
 
 test_get_not_exist(_Config) ->
     {ok, Conn} = memcached:connect(?MEMCACHED_HOST, ?MEMCACHED_PORT1),
@@ -179,6 +205,7 @@ test_version(_Config) ->
 test_quit(_Config) ->
     {ok, Conn} = memcached:connect(?MEMCACHED_HOST, ?MEMCACHED_PORT1),
     ok = memcached:quit(Conn),
+    io:format("C: ~p~n", [Conn]),
     {error, closed} = memcached:get(Conn, "mykey"),
     ok = memcached:disconnect(Conn).
 
@@ -268,6 +295,8 @@ all() ->
      test_connect_error,
      test_set_get,
      test_setb_getb,
+     test_large_setb_getb,
+     test_large_setb_get_multib,
      test_get_not_exist,
      test_get_multi,
      test_get_multib,
